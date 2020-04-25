@@ -1,0 +1,18 @@
+[package]
+name = "async-trait-ext"
+version = "0.1.0"
+authors = ["Tom Dohrmann <erbse.13@gmx.de>"]
+edition = "2018"
+license = "WTFPL"
+categories = ["asynchronous"]
+repository = "https://github.com/Freax13/async-trait-ext"
+readme = "README.md"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", features = ["full", "visit-mut"] }
+proc-macro2 = "1.0"
+quote = "1.0"
+heck = "0.3"
