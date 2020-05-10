@@ -56,15 +56,6 @@ fn test_receiver() {
     };
 }
 
-#[async_trait_ext]
-trait ReceiverWithData {
-    async fn owned(self, data: &[u8])
-    where
-        Self: Copy + Unpin;
-    async fn borrowed<'a>(&'a self, data: &'a [u8]);
-    async fn mutably_borrowed<'a>(&'a mut self, data: &'a [u8]);
-}
-
 #[test]
 fn test_without_receiver() {
     #[async_trait_ext]
