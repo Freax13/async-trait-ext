@@ -26,3 +26,8 @@ provided = []
 name = "provided"
 path = "tests/provided.rs"
 required-features = ["provided"]
+
+[[test]]
+name = "mut_pattern"
+path = "tests/mut_pattern.rs"
+required-features = ["provided"]

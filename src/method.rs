@@ -120,6 +120,19 @@ impl MethodData {
                 .push(parse_quote!(Self: Sized));
         }
 
+        // remove mut from params
+        if !with_content {
+            for input in item.sig.inputs.iter_mut() {
+                if let FnArg::Typed(pt) = input {
+                    if let Pat::Ident(pi) = &mut *pt.pat {
+                        if pi.by_ref.is_none() {
+                            pi.mutability.take();
+                        }
+                    }
+                }
+            }
+        }
+
         // fix return type
         let mut generics = self.make_generics();
 
@@ -179,71 +192,70 @@ impl MethodData {
                     });
 
                 item.default = Some(parse_quote!({ #ident(#(#args),*)}));
+            } else if !self.dynamic {
+                let default = item.default.take();
+                item.default = Some(parse_quote!( {
+                    async move {
+                        #default
+                    }
+                }));
             } else {
-                if !self.dynamic {
-                    let default = item.default.take();
-                    item.default = Some(parse_quote!( {
-                        async move {
-                            #default
-                        }
-                    }));
-                } else {
-                    let mut default = item.default.take().unwrap();
-                    rename_self_to_this(&mut default);
+                let mut default = item.default.take().unwrap();
+                rename_self_to_this(&mut default);
 
-                    let mut inner = item.clone();
-                    let mut args = Vec::<Expr>::new();
+                let mut inner = item.clone();
+                let mut args = Vec::<Expr>::new();
 
-                    for (i, arg) in inner.sig.inputs.iter_mut().enumerate() {
-                        match arg {
-                            FnArg::Receiver(r) => {
-                                let mutability = &r.mutability;
-                                let ident = format_ident!("{}Ext", &self.item.ident);
-                                if let Some((and_token, lifetime)) = r.reference.clone() {
-                                    *arg = parse_quote!(this: #and_token #lifetime #mutability dyn #ident);
-                                } else {
-                                    let ident = format_ident!("SelfTy");
-                                    *arg = parse_quote!(this: #mutability impl #ident);
-                                }
-                                args.push(parse_quote!(self));
+                for (i, arg) in inner.sig.inputs.iter_mut().enumerate() {
+                    match arg {
+                        FnArg::Receiver(r) => {
+                            let mutability = &r.mutability;
+                            let ident = format_ident!("{}Ext", &self.item.ident);
+                            if let Some((and_token, lifetime)) = r.reference.clone() {
+                                *arg =
+                                    parse_quote!(this: #and_token #lifetime #mutability dyn #ident);
+                            } else {
+                                let ident = format_ident!("SelfTy");
+                                *arg = parse_quote!(this: #mutability impl #ident);
                             }
-                            FnArg::Typed(pat_ty) => {
-                                match &*pat_ty.pat {
-                                    Pat::Ident(pat_ident) => {
-                                        // the parameter already has a name -> use it
-                                        let ident = &pat_ident.ident;
-                                        args.push(parse_quote!(#ident))
-                                    }
-                                    _ => {
-                                        // the parameter doesn't have a name -> make one and use it
-                                        let ident = format_ident!("arg{}", i + 1);
-                                        *pat_ty.pat = Pat::Ident(PatIdent {
-                                            attrs: Vec::new(),
-                                            by_ref: None,
-                                            mutability: None,
-                                            ident: ident.clone(),
-                                            subpat: None,
-                                        });
-                                        args.push(parse_quote!(#ident))
-                                    }
+                            args.push(parse_quote!(self));
+                        }
+                        FnArg::Typed(pat_ty) => {
+                            match &*pat_ty.pat {
+                                Pat::Ident(pat_ident) => {
+                                    // the parameter already has a name -> use it
+                                    let ident = &pat_ident.ident;
+                                    args.push(parse_quote!(#ident))
+                                }
+                                _ => {
+                                    // the parameter doesn't have a name -> make one and use it
+                                    let ident = format_ident!("arg{}", i + 1);
+                                    *pat_ty.pat = Pat::Ident(PatIdent {
+                                        attrs: Vec::new(),
+                                        by_ref: None,
+                                        mutability: None,
+                                        ident: ident.clone(),
+                                        subpat: None,
+                                    });
+                                    args.push(parse_quote!(#ident))
                                 }
                             }
                         }
                     }
-
-                    inner.sig.ident = format_ident!("inner");
-                    inner.default = Some(parse_quote!( {
-                        async move {
-                            #default
-                        }
-                    }));
-
-                    item.default = Some(parse_quote!( {
-                        #inner
-
-                        inner(#(#args),*)
-                    }));
                 }
+
+                inner.sig.ident = format_ident!("inner");
+                inner.default = Some(parse_quote!( {
+                    async move {
+                        #default
+                    }
+                }));
+
+                item.default = Some(parse_quote!( {
+                    #inner
+
+                    inner(#(#args),*)
+                }));
             }
         } else {
             // remove default block

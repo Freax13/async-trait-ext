@@ -158,9 +158,7 @@ pub trait Read {
     async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize>;
 
     #[provided]
-    async fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> Result<usize> {
-        let mut buf = buf;
-
+    async fn read_until<'a>(&'a mut self, byte: u8, mut buf: &'a mut [u8]) -> Result<usize> {
         let mut b = [0];
         let mut bytes_read = 0;
 
@@ -209,13 +207,12 @@ impl<SelfTy: Read> ReadExt for SelfTy {
         ReadRead(self, buf)
     }
 
-    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadReadUntil<'a, Self>
+    fn read_until<'a>(&'a mut self, byte: u8, mut buf: &'a mut [u8]) -> ReadReadUntil<'a, Self>
     where
         Self: Sized,
     {
         async move {
             {
-                let mut buf = buf;
                 let mut b = [0];
                 let mut bytes_read = 0;
                 while !buf.is_empty() {
@@ -266,9 +263,7 @@ pub trait Read {
     async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize>;
 
     #[provided]
-    async fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> Result<usize> {
-        let mut buf = buf;
-
+    async fn read_until<'a>(&'a mut self, byte: u8, mut buf: &'a mut [u8]) -> Result<usize> {
         let mut b = [0];
         let mut bytes_read = 0;
 
