@@ -251,6 +251,7 @@ impl MethodData {
                     }
                 }));
 
+                item.attrs.push(parse_quote!(#[allow(unused_mut)]));
                 item.default = Some(parse_quote!( {
                     #inner
 
