@@ -23,7 +23,7 @@ pub fn async_trait_ext(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let item = parse_macro_input!(item as ItemTrait);
-    match TraitData::new(&item, dynamic) {
+    match TraitData::new(item, dynamic) {
         Ok(data) => data.to_tokens(),
         Err(e) => e.to_compile_error().into(),
     }
