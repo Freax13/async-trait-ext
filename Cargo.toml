@@ -1,6 +1,6 @@
 [package]
 name = "async-trait-ext"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Tom Dohrmann <erbse.13@gmx.de>"]
 edition = "2018"
 license = "WTFPL"
