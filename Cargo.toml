@@ -12,22 +12,19 @@ description = "a procedural macro for async traits"
 [lib]
 proc-macro = true
 
-[dependencies]
-syn = { version = "1.0", features = ["full", "visit-mut"] }
-proc-macro2 = "1.0"
-quote = "1.0"
-heck = "0.3"
-
 [features]
 default = []
 provided = []
 
+[dependencies]
+macro-compose = "0.1"
+macro-input = "0.1"
+syn = { version = "1.0", features = ["visit-mut"] }
+proc-macro2 = "1.0"
+quote = "1.0"
+heck = "0.3"
+
 [[test]]
 name = "provided"
 path = "tests/provided.rs"
-required-features = ["provided"]
-
-[[test]]
-name = "mut_pattern"
-path = "tests/mut_pattern.rs"
 required-features = ["provided"]

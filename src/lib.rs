@@ -1,36 +1,32 @@
-mod method;
-mod r#trait;
+mod impls;
+mod input;
+mod methods;
+mod traits;
 
-use r#trait::TraitData;
-
-use heck::CamelCase;
+use macro_compose::{Collector, Context};
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, Span};
-use syn::{parse_macro_input, Error, ItemTrait, TraitItemMethod};
+use quote::format_ident;
+use syn::{parse_quote, Ident, ItemTrait};
 
 #[proc_macro_attribute]
-pub fn async_trait_ext(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let meta = format!("{}", attr);
-    let dynamic = match meta.as_str() {
-        "" => false,
-        "dynamic" => true,
-        _ => {
-            let stream: proc_macro2::TokenStream = attr.into();
-            return Error::new_spanned(stream, format!("expected dynamic got {}", meta))
-                .to_compile_error()
-                .into();
-        }
-    };
+pub fn async_trait_ext(input: TokenStream, item: TokenStream) -> TokenStream {
+    let input: proc_macro2::TokenStream = input.into();
+    let item: proc_macro2::TokenStream = item.into();
+    let combined: proc_macro2::TokenStream = parse_quote!(#[async_trait_ext( #input )] #item);
 
-    let item = parse_macro_input!(item as ItemTrait);
-    match TraitData::new(item, dynamic) {
-        Ok(data) => data.to_tokens(),
-        Err(e) => e.to_compile_error().into(),
-    }
+    let mut collector = Collector::new();
+
+    let mut trait_context = Context::<ItemTrait>::new_parse2(&mut collector, combined);
+    trait_context.lint(&traits::AttributeLint);
+    trait_context.lint(&methods::MethodAttrLint);
+
+    trait_context.expand(&traits::PollTraitExpand);
+    trait_context.expand(&traits::ExtensionTraitExpand);
+    trait_context.expand(&impls::ImplExtTraitExpand);
+
+    collector.finish().into()
 }
 
-fn method_struct_name(item: &ItemTrait, m: &TraitItemMethod) -> Ident {
-    let raw = format!("{}_{}", &item.ident, &m.sig.ident);
-    let camel_case = raw.to_camel_case();
-    Ident::new(&camel_case, Span::call_site())
+fn ext_trait_name(input: &ItemTrait) -> Ident {
+    format_ident!("{}Ext", input.ident)
 }

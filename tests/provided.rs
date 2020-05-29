@@ -9,7 +9,7 @@ fn test_provided() {
     trait Foo {
         async fn bar(&self, i: u32);
 
-        #[provided]
+        #[async_fn(provided)]
         async fn baz(&self) {
             self.bar(0);
         }
@@ -28,4 +28,29 @@ fn test_provided() {
         Quux.bar(0).await;
         Quux.baz().await;
     };
+}
+
+#[async_trait_ext]
+pub trait Static {
+    async fn method1(&self, val: u32) -> u32;
+
+    #[async_fn(provided)]
+    async fn method2(&self, val: u32) -> u32 {
+        self.method1(val - 1).await + 1
+    }
+}
+
+#[async_trait_ext(dynamic)]
+pub trait Dynamic {
+    async fn method1(&self, val: u32) -> u32;
+
+    #[async_fn(provided)]
+    async fn method2(&self, val: u32) -> u32 {
+        self.method1(val - 1).await + 1
+    }
+
+    #[async_fn(provided)]
+    async fn method3<'a>(&'a self, val: &'a mut u32) {
+        *val = self.method2(*val).await + 1;
+    }
 }

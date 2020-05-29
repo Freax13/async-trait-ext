@@ -45,7 +45,7 @@ Example
 trait AsyncRead {
     async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize>;
     
-    #[provided]
+    #[async_fn(provided)]
     async fn read_u8<'a>(&'a mut self) -> Result<u8> {
         let mut buf = [0];
         self.read(&mut buf).await?;
@@ -59,92 +59,93 @@ trait AsyncRead {
 ```rust
 #[async_trait_ext]
 pub trait Lock {
-    async fn lock<'a>(&'a self) -> Result<LockGuard>;
+    async fn lock(&self) -> Result<LockGuard>;
 }
 ```
 expands to
 ```rust
 pub trait Lock {
-    fn poll_lock<'a>(
-        &'a self,
-        cx: &mut core::task::Context,
-    ) -> core::task::Poll<Result<LockGuard>>;
-}
-
-/// the extension trait for [`Lock`]
-pub trait LockExt: Lock {
-    fn lock<'a>(&'a self) -> LockLock<'a, Self>
-    where
-        Self: Sized;
-}
-
-impl<SelfTy: Lock> LockExt for SelfTy {
-    fn lock<'a>(&'a self) -> LockLock<'a, Self>
-    where
-        Self: Sized,
-    {
-        LockLock(self)
-    }
+    fn poll_lock(&self, ctx: &mut ::core::task::Context) -> ::core::task::Poll<Result<LockGuard>>;
 }
 
 /// the future returned by [`LockExt::lock`]
-pub struct LockLock<'a, SelfTy>(&'a SelfTy)
-where
-    SelfTy: Lock;
+pub struct LockLock<'__default_lifetime, __Self: Lock>(
+    &'__default_lifetime __Self,
+    ::core::marker::PhantomData<*const __Self>,
+    ::core::marker::PhantomData<&'__default_lifetime ()>,
+);
 
-impl<'a, SelfTy> core::future::Future for LockLock<'a, SelfTy>
-where
-    SelfTy: Lock,
+impl<'__default_lifetime, __Self: Lock> ::core::future::Future
+    for LockLock<'__default_lifetime, __Self>
 {
     type Output = Result<LockGuard>;
+    
     fn poll(
-        mut self: core::pin::Pin<&mut Self>,
-        cx: &mut core::task::Context,
-    ) -> core::task::Poll<Self::Output> {
+        mut self: ::core::pin::Pin<&mut Self>,
+        cx: &mut ::core::task::Context,
+    ) -> ::core::task::Poll<Self::Output> {
         let this = &mut *self;
-        <SelfTy as Lock>::poll_lock(this.0.into(), cx.into())
+        <__Self as Lock>::poll_lock(this.0.into(), cx)
+    }
+}
+
+pub trait LockExt: Lock + ::core::marker::Sized {
+    fn lock(&self) -> LockLock<'_, Self>;
+}
+
+impl<__IMPL: Lock> LockExt for __IMPL {
+    fn lock(&self) -> LockLock<'_, Self> {
+        LockLock(
+            self,
+            ::core::marker::PhantomData,
+            ::core::marker::PhantomData,
+        )
     }
 }
 ```
 ### Dynamic
 ```rust
 #[async_trait_ext(dynamic)]
-pub trait Read {
-    async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize>;
+pub trait Write {
+    async fn write<'a>(&'a mut self, buf: &'a [u8]) -> Result<usize>;
 }
 ```
 expands to
 ```rust
-pub trait Read {
-    fn poll_read<'a>(
+pub trait Write {
+    fn poll_write<'a>(
         &'a mut self,
-        buf: &'a mut [u8],
-        cx: &mut core::task::Context,
-    ) -> core::task::Poll<Result<usize>>;
+        buf: &'a [u8],
+        ctx: &mut ::core::task::Context,
+    ) -> ::core::task::Poll<Result<usize>>;
 }
 
-/// the extension trait for [`Read`]
-pub trait ReadExt: Read {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadRead<'a>;
-}
+/// the future returned by [`WriteExt::write`]
+pub struct WriteWrite<'a>(
+    &'a mut dyn Write,
+    &'a [u8],
+    ::core::marker::PhantomData<&'a ()>,
+);
 
-impl<SelfTy: Read> ReadExt for SelfTy {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadRead<'a> {
-        ReadRead(self, buf)
+impl<'a> ::core::future::Future for WriteWrite<'a> {
+    type Output = Result<usize>;
+
+    fn poll(
+        mut self: ::core::pin::Pin<&mut Self>,
+        cx: &mut ::core::task::Context,
+    ) -> ::core::task::Poll<Self::Output> {
+        let this = &mut *self;
+        Write::poll_write(this.0.into(), this.1.into(), cx)
     }
 }
 
-/// the future returned by [`ReadExt::read`]
-pub struct ReadRead<'a>(&'a mut dyn Read, &'a mut [u8]);
+pub trait WriteExt: Write {
+    fn write<'a>(&'a mut self, buf: &'a [u8]) -> WriteWrite<'a>;
+}
 
-impl<'a> core::future::Future for ReadRead<'a> {
-    type Output = Result<usize>;
-    fn poll(
-        mut self: core::pin::Pin<&mut Self>,
-        cx: &mut core::task::Context,
-    ) -> core::task::Poll<Self::Output> {
-        let this = &mut *self;
-        Read::poll_read(this.0.into(), this.1.into(), cx.into())
+impl<__IMPL: Write> WriteExt for __IMPL {
+    fn write<'a>(&'a mut self, buf: &'a [u8]) -> WriteWrite<'a> {
+        WriteWrite(self, buf, ::core::marker::PhantomData)
     }
 }
 ```
@@ -154,10 +155,10 @@ impl<'a> core::future::Future for ReadRead<'a> {
 #![feature(type_alias_impl_trait)]
 
 #[async_trait_ext]
-pub trait Read {
+pub trait ReadStatic {
     async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize>;
 
-    #[provided]
+    #[async_fn(provided)]
     async fn read_until<'a>(&'a mut self, byte: u8, mut buf: &'a mut [u8]) -> Result<usize> {
         let mut b = [0];
         let mut bytes_read = 0;
@@ -181,36 +182,58 @@ expands to
 ```rust
 #![feature(type_alias_impl_trait)]
 
-pub trait Read {
+pub trait ReadStatic {
     fn poll_read<'a>(
         &'a mut self,
         buf: &'a mut [u8],
-        cx: &mut ::core::task::Context,
+        ctx: &mut ::core::task::Context,
     ) -> ::core::task::Poll<Result<usize>>;
 }
 
-/// the extension trait for [`Read`]
-pub trait ReadExt: Read {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadRead<'a, Self>
-    where
-        Self: Sized;
-    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadReadUntil<'a, Self>
-    where
-        Self: Sized;
+/// the future returned by [`ReadStaticExt::read`]
+pub struct ReadStaticRead<'a, __Self: ReadStatic>(
+    &'a mut __Self,
+    &'a mut [u8],
+    ::core::marker::PhantomData<*const __Self>,
+    ::core::marker::PhantomData<&'a ()>,
+);
+
+impl<'a, __Self: ReadStatic> ::core::future::Future for ReadStaticRead<'a, __Self> {
+    type Output = Result<usize>;
+
+    fn poll(
+        mut self: ::core::pin::Pin<&mut Self>,
+        cx: &mut ::core::task::Context,
+    ) -> ::core::task::Poll<Self::Output> {
+        let this = &mut *self;
+        <__Self as ReadStatic>::poll_read(this.0.into(), this.1.into(), cx)
+    }
 }
 
-impl<SelfTy: Read> ReadExt for SelfTy {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadRead<'a, Self>
-    where
-        Self: Sized,
-    {
-        ReadRead(self, buf)
+/// the future returned by [`ReadStaticExt::read_until`]
+pub type ReadStaticReadUntil<'a, __Self: ReadStatic> =
+    impl ::core::future::Future<Output = Result<usize>>;
+
+pub trait ReadStaticExt: ReadStatic + ::core::marker::Sized {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadStaticRead<'a, Self>;
+    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadStaticReadUntil<'a, Self>;
+}
+
+impl<__IMPL: ReadStatic> ReadStaticExt for __IMPL {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadStaticRead<'a, Self> {
+        ReadStaticRead(
+            self,
+            buf,
+            ::core::marker::PhantomData,
+            ::core::marker::PhantomData,
+        )
     }
 
-    fn read_until<'a>(&'a mut self, byte: u8, mut buf: &'a mut [u8]) -> ReadReadUntil<'a, Self>
-    where
-        Self: Sized,
-    {
+    fn read_until<'a>(
+        &'a mut self,
+        byte: u8,
+        mut buf: &'a mut [u8],
+    ) -> ReadStaticReadUntil<'a, Self> {
         async move {
             {
                 let mut b = [0];
@@ -230,28 +253,6 @@ impl<SelfTy: Read> ReadExt for SelfTy {
         }
     }
 }
-
-/// the future returned by [`ReadExt::read`]
-pub struct ReadRead<'a, SelfTy>(&'a mut SelfTy, &'a mut [u8])
-where
-    SelfTy: Read;
-
-impl<'a, SelfTy> ::core::future::Future for ReadRead<'a, SelfTy>
-where
-    SelfTy: Read,
-{
-    type Output = Result<usize>;
-    fn poll(
-        mut self: ::core::pin::Pin<&mut Self>,
-        cx: &mut ::core::task::Context,
-    ) -> ::core::task::Poll<Self::Output> {
-        let this = &mut *self;
-        <SelfTy as Read>::poll_read(this.0.into(), this.1.into(), cx.into())
-    }
-}
-
-/// the future returned by [`ReadExt::read_until`]
-type ReadReadUntil<'a, SelfTy> = impl ::core::future::Future<Output = Result<usize>> + 'a;
 ```
 
 ### Provided methods + dynamic
@@ -259,10 +260,10 @@ type ReadReadUntil<'a, SelfTy> = impl ::core::future::Future<Output = Result<usi
 #![feature(type_alias_impl_trait)]
 
 #[async_trait_ext(dynamic)]
-pub trait Read {
+pub trait ReadDynamic {
     async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize>;
 
-    #[provided]
+    #[async_fn(provided)]
     async fn read_until<'a>(&'a mut self, byte: u8, mut buf: &'a mut [u8]) -> Result<usize> {
         let mut b = [0];
         let mut bytes_read = 0;
@@ -281,75 +282,75 @@ pub trait Read {
         Ok(bytes_read)
     }
 }
-
 ```
 expands to
 ```rust
 #![feature(type_alias_impl_trait)]
 
-pub trait Read {
+pub trait ReadDynamic {
     fn poll_read<'a>(
         &'a mut self,
         buf: &'a mut [u8],
-        cx: &mut ::core::task::Context,
+        ctx: &mut ::core::task::Context,
     ) -> ::core::task::Poll<Result<usize>>;
 }
 
-/// the extension trait for [`Read`]
-pub trait ReadExt: Read {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadRead<'a>;
-    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadReadUntil<'a>;
-}
+/// the future returned by [`ReadDynamicExt::read`]
+pub struct ReadDynamicRead<'a>(
+    &'a mut dyn ReadDynamic,
+    &'a mut [u8],
+    ::core::marker::PhantomData<&'a ()>,
+);
 
-impl<SelfTy: Read> ReadExt for SelfTy {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadRead<'a> {
-        ReadRead(self, buf)
-    }
-
-    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadReadUntil<'a> {
-        fn inner<'a>(this: &'a mut dyn ReadExt, byte: u8, buf: &'a mut [u8]) -> ReadReadUntil<'a> {
-            async move {
-                {
-                    let mut buf = buf;
-                    let mut b = [0];
-                    let mut bytes_read = 0;
-                    while !buf.is_empty() {
-                        match this.read(&mut b).await? {
-                            1 if b[0] != byte => {
-                                bytes_read += 1;
-                                buf[0] = b[0];
-                                buf = &mut buf[1..];
-                            }
-                            _ => break,
-                        }
-                    }
-                    Ok(bytes_read)
-                }
-            }
-        }
-        inner(self, byte, buf)
-    }
-}
-
-/// the future returned by [`ReadExt::read`]
-pub struct ReadRead<'a>(&'a mut dyn Read, &'a mut [u8]);
-
-impl<'a> ::core::future::Future for ReadRead<'a> {
+impl<'a> ::core::future::Future for ReadDynamicRead<'a> {
     type Output = Result<usize>;
     fn poll(
         mut self: ::core::pin::Pin<&mut Self>,
         cx: &mut ::core::task::Context,
     ) -> ::core::task::Poll<Self::Output> {
         let this = &mut *self;
-        Read::poll_read(this.0.into(), this.1.into(), cx.into())
+        ReadDynamic::poll_read(this.0.into(), this.1.into(), cx)
     }
 }
 
-/// the future returned by [`ReadExt::read_until`]
-type ReadReadUntil<'a> = impl ::core::future::Future<Output = Result<usize>> + 'a;
+/// the future returned by [`ReadDynamicExt::read_until`]
+pub type ReadDynamicReadUntil<'a> = impl ::core::future::Future<Output = Result<usize>>;
+
+pub trait ReadDynamicExt: ReadDynamic {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadDynamicRead<'a>;
+    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadDynamicReadUntil<'a>;
+}
+
+impl<__IMPL: ReadDynamic> ReadDynamicExt for __IMPL {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadDynamicRead<'a> {
+        ReadDynamicRead(self, buf, ::core::marker::PhantomData)
+    }
+
+    fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut [u8]) -> ReadDynamicReadUntil<'a> {
+        async fn fn_impl<'a>(
+            this: &mut dyn ReadDynamicExt,
+            byte: u8,
+            mut buf: &'a mut [u8],
+        ) -> Result<usize> {
+            {
+                let mut b = [0];
+                let mut bytes_read = 0;
+                while !buf.is_empty() {
+                    match this.read(&mut b).await? {
+                        1 if b[0] != byte => {
+                            bytes_read += 1;
+                            buf[0] = b[0];
+                            buf = &mut buf[1..];
+                        }
+                        _ => break,
+                    }
+                }
+                Ok(bytes_read)
+            }
+        }
+        fn_impl(self, byte, buf)
+    }
+}
 ```
 
 The tests contain also some examples on how the traits can be used.
-
-## Disclaimer
-It's very likely that the macro still has some bugs (especially concerning things like generics)
