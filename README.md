@@ -71,7 +71,7 @@ pub trait Lock {
 /// the future returned by [`LockExt::lock`]
 pub struct LockLock<'__default_lifetime, __Self: Lock>(
     &'__default_lifetime __Self,
-    ::core::marker::PhantomData<*const __Self>,
+    ::core::marker::PhantomData<fn(__Self)>,
     ::core::marker::PhantomData<&'__default_lifetime ()>,
 );
 
@@ -194,7 +194,7 @@ pub trait ReadStatic {
 pub struct ReadStaticRead<'a, __Self: ReadStatic>(
     &'a mut __Self,
     &'a mut [u8],
-    ::core::marker::PhantomData<*const __Self>,
+    ::core::marker::PhantomData<fn(__Self)>,
     ::core::marker::PhantomData<&'a ()>,
 );
 

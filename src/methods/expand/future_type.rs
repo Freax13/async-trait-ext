@@ -70,7 +70,7 @@ impl Expand<TraitItemMethod> for FutureStructExpand<'_> {
 
         let args = args.chain(generics.type_params().map(|tp| {
             let ident = &tp.ident;
-            parse_quote!(::core::marker::PhantomData<*const #ident>)
+            parse_quote!(::core::marker::PhantomData<fn(#ident)>)
         }));
         let args = args.chain(generics.lifetimes().map(|tp| {
             let lifetime = &tp.lifetime;
